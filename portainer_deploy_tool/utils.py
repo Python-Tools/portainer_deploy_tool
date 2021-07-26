@@ -137,7 +137,7 @@ class GitStackInfo:
             body.update({"swarmID": self.swarm_id})
         else:
             stack_type = 2
-        params=(("method", "repository"), ("type",stack_type), ("endpointId",self.endpoint_id))
+        params=(("method", "repository"), ("type", stack_type), ("endpointId", self.endpoint_id))
         res = rq.post(
             f"{base_url}/api/stacks",
             headers=rq.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}),
