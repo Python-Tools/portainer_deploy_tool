@@ -3,7 +3,7 @@ import yaml
 import requests as rq
 from schema_entry import EntryPoint
 from pyloggerhelper import log
-from .utils import base_schema_properties, get_jwt
+from .utils import base_schema_properties, get_jwt, HttpCodeError
 
 
 schema_properties: Dict[str, Any] = {
@@ -124,7 +124,7 @@ class UpdateServiceInStack(EntryPoint):
             stack_id (str): stack信息的id
 
         Raises:
-            AttributeError: get stack file content query get error
+            HttpCodeError: get stack file content query get error
             e: get stack file content query get json result error
             AttributeError: get stack file content query has no field StackFileContent
 
@@ -137,7 +137,7 @@ class UpdateServiceInStack(EntryPoint):
         )
         if res.status_code != 200:
             log.error("get stack file content query get error", stack_id=stack_id, status_code=res.status_code)
-            raise AttributeError("get stack file content query get error")
+            raise HttpCodeError("get stack file content query get error")
         try:
             res_json = res.json()
         except Exception as e:
@@ -162,7 +162,7 @@ class UpdateServiceInStack(EntryPoint):
             services (List[str]): 这个stack中要更新的services名称列表
 
         Raises:
-            AttributeError: service_name not in old compose file
+            HttpCodeError: service_name not in old compose file
             AttributeError: deploy query get error
             e: deploy query get json result error
         """
@@ -189,7 +189,7 @@ class UpdateServiceInStack(EntryPoint):
         )
         if res.status_code != 200:
             log.error("deploy query get error", stack_key=stack_key, status_code=res.status_code)
-            raise AttributeError("deploy query get error")
+            raise HttpCodeError("deploy query get error")
         else:
             try:
                 res_json = res.json()

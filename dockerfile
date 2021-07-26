@@ -8,3 +8,5 @@ ADD pyproject.toml /code/pyproject.toml
 ADD README.md /code/README.md
 ADD setup.cfg /code/setup.cfg
 ADD setup.py /code/setup.py
+RUN python setup.py install
+ENTRYPOINT [ "python","-m", "portainer_deploy_tool"]
