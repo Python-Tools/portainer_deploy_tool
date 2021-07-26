@@ -34,7 +34,7 @@ jobs:
           pycodestyle --max-line-length=140 --ignore=E501 --first --statistics portainer_deploy_tool
       - name: Type Hint Check
         run: |
-          mypy --ignore-missing-imports --show-column-numbers --follow-imports=silent --check-untyped-defs --disallow-untyped-defs --no-implicit-optional --warn-unused-ignores portainer_deploy_tool
+          mypy --install-types --non-interactive --ignore-missing-imports --show-column-numbers --follow-imports=silent --check-untyped-defs --disallow-untyped-defs --no-implicit-optional --warn-unused-ignores portainer_deploy_tool
   
   docker-build:
     needs: check
