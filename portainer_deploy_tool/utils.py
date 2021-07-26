@@ -2,7 +2,7 @@ import time
 from dataclasses import dataclass
 import requests as rq
 from pyloggerhelper import log
-from typing import Dict, Any, List, Union, Optional
+from typing import Dict, Any, List, Union, Optional,Iterable
 
 base_schema_properties = {
     "log_level": {
@@ -137,14 +137,15 @@ class GitStackInfo:
             body.update({"swarmID": self.swarm_id})
         else:
             stack_type = 2
+        params=(
+            ("method", "repository"),
+            ("type",stack_type),
+            ("endpointId",self.endpoint_id)
+        )
         res = rq.post(
             f"{base_url}/api/stacks",
             headers=rq.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}),
-            params={
-                "method": "repository",
-                "type": stack_type,
-                "endpointId": self.endpoint_id
-            },
+            params=params,
             json=body)
         if res.status_code != 200:
             log.error("create stack query get error",
