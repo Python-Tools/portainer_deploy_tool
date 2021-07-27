@@ -55,6 +55,10 @@ schema_properties.update(**base_schema_properties)
 
 class UpdateServiceInStack(EntryPoint):
     """更新已经存在的stack."""
+    default_config_file_paths = [
+        "./update_service_in_stack_config.json"
+    ]
+    argparse_noflag = "deploy_path"
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",

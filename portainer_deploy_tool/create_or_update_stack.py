@@ -233,6 +233,7 @@ class CreateOrUpdateStack(EntryPoint):
     default_config_file_paths = [
         "./create_or_update_stack_config.json"
     ]
+    argparse_noflag = "endpoints"
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
