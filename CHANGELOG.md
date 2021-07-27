@@ -3,6 +3,7 @@
 ## 接口修改
 
 + 新增全局flag`not_verify`用于跳过https的验证
++ 子命令`updateservicebywebhook`的`tokens`参数现在是位置参数
 
 # 0.0.2
 

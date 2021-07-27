@@ -23,6 +23,7 @@ schema_properties.update(**base_schema_properties)
 
 class UpdateServiceByWebhooks(EntryPoint):
     """利用webhook更新已经存在的service."""
+    argparse_noflag = "tokens"
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
