@@ -9,4 +9,6 @@ ADD README.md /code/README.md
 ADD setup.cfg /code/setup.cfg
 ADD setup.py /code/setup.py
 RUN python setup.py install
+WORKDIR /
+RUN rm -rf /code
 ENTRYPOINT [ "python","-m", "portainer_deploy_tool"]
