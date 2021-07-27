@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Optional
 import yaml
-import requests as rq
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util import Retry
 from schema_entry import EntryPoint
 from pyloggerhelper import log
 from .utils import base_schema_properties, get_jwt, HttpCodeError
@@ -115,10 +117,11 @@ class UpdateServiceInStack(EntryPoint):
                 image_name = f"{artifact_name}:{artifact_version}"
         return image_name
 
-    def get_stack_file_content(self, base_url: str, jwt: str, stack_id: str) -> str:
+    def get_stack_file_content(self, rq: requests.Session, base_url: str, jwt: str, stack_id: str) -> str:
         """获取更新前stack的compose文本.
 
         Args:
+            rq (requests.Session): 请求会话
             base_url (str): portainer基础路径
             jwt (str): 访问jwt
             stack_id (str): stack信息的id
@@ -133,7 +136,7 @@ class UpdateServiceInStack(EntryPoint):
         """
         res = rq.get(
             f"{base_url}/stacks/{stack_id}/file",
-            headers=rq.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt})
+            headers=requests.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt})
         )
         if res.status_code != 200:
             log.error("get stack file content query get error", stack_id=stack_id, status_code=res.status_code)
@@ -151,10 +154,11 @@ class UpdateServiceInStack(EntryPoint):
                 log.error("get stack file content query has no field StackFileContent", stack_id=stack_id)
                 raise AttributeError("get stack file content query has no field StackFileContent")
 
-    def deploy(self, base_url: str, jwt: str, image_name: str, stack_key: str, services: List[str]) -> None:
+    def deploy(self, rq: requests.Session, base_url: str, jwt: str, image_name: str, stack_key: str, services: List[str]) -> None:
         """更新部署单个stack中的服务.
 
         Args:
+            rq (requests.Session): 请求会话
             base_url (str): portainer基础路径
             jwt (str): 访问jwt
             image_name (str): 镜像完整名
@@ -168,7 +172,7 @@ class UpdateServiceInStack(EntryPoint):
         """
         endpoint_id_str, stack_id = stack_key.split("::")
         endpoint_id = int(endpoint_id_str)
-        StackFileContent = self.get_stack_file_content(base_url=base_url, jwt=jwt, stack_id=stack_id)
+        StackFileContent = self.get_stack_file_content(rq, base_url=base_url, jwt=jwt, stack_id=stack_id)
         s = yaml.load(StackFileContent)
         log.info("get old compose", content=s)
         for service_name in services:
@@ -180,7 +184,7 @@ class UpdateServiceInStack(EntryPoint):
         compose = yaml.dump(s, sort_keys=False)
         res = rq.put(
             f"{base_url}/stacks/{stack_id}",
-            headers=rq.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}),
+            headers=requests.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}),
             params={"endpointId": endpoint_id},
             json={
                 "StackFileContent": compose,
@@ -200,10 +204,11 @@ class UpdateServiceInStack(EntryPoint):
                 log.debug("deploy query get result", stack_key=stack_key, cotent=res_json)
                 log.info("deploy ok", stack_key=stack_key)
 
-    def deploy_all(self, base_url: str, jwt: str, image_name: str, stack_services: Dict[str, List[str]]) -> None:
+    def deploy_all(self, rq: requests.Session, base_url: str, jwt: str, image_name: str, stack_services: Dict[str, List[str]]) -> None:
         """部署解析出来的所有stack.
 
         Args:
+            rq (requests.Session): 请求会话
             base_url (str): portainer基础路径
             jwt (str): 访问jwt
             image_name (str): 镜像完整名
@@ -211,6 +216,7 @@ class UpdateServiceInStack(EntryPoint):
         """
         for stack_key, services in stack_services.items():
             self.deploy(
+                rq,
                 base_url=base_url,
                 jwt=jwt,
                 image_name=image_name,
@@ -227,8 +233,13 @@ class UpdateServiceInStack(EntryPoint):
         artifact_name = self.config["artifact_name"]
         artifact_version = self.config["artifact_version"]
         deploy_path = self.config["deploy_path"]
+        retry_max_times = self.config.get("retry_max_times")
+        retry_interval_backoff_factor = self.config.get("retry_interval_backoff_factor")
+        rq = requests.Session()
+        if retry_max_times and int(retry_max_times) > 0:
+            rq.mount('https://', HTTPAdapter(max_retries=Retry(total=int(retry_max_times), backoff_factor=retry_interval_backoff_factor, method_whitelist=frozenset(['GET', 'POST', 'PUT']))))
         log.initialize_for_app(app_name="UpdateStack", log_level=log_level)
-        jwt = get_jwt(base_url=base_url, username=username, password=password)
+        jwt = get_jwt(rq, base_url=base_url, username=username, password=password)
         image_name = self.make_image_name(
             artifact_name=artifact_name,
             artifact_version=artifact_version,
@@ -237,6 +248,7 @@ class UpdateServiceInStack(EntryPoint):
         )
         stack_services = self.parser_deploy_path(deploy_path)
         self.deploy_all(
+            rq,
             base_url=base_url,
             jwt=jwt,
             image_name=image_name,

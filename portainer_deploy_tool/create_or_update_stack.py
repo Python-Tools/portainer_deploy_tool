@@ -1,17 +1,17 @@
 from pathlib import Path
+from dataclasses import dataclass
 from copy import deepcopy
 from collections import defaultdict
 from typing import Dict, Any, List, NamedTuple, DefaultDict, Optional
-import requests as rq
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util import Retry
 from schema_entry import EntryPoint
 from pyloggerhelper import log
 from .utils import (
-    GitStackInfo,
+    HttpCodeError,
     base_schema_properties,
-    get_jwt,
-    get_swarm_id,
-    get_all_stacks_from_portainer,
-    NotSwarmEndpointError
+    get_jwt
 )
 
 
@@ -75,24 +75,157 @@ schema_properties: Dict[str, Any] = {
         "type": "string",
         "description": "执行位置",
         "default": "."
-    },
-    "retry_max_times": {
-        "type": "integer",
-        "description": "重试次数",
-    },
-    "retry_interval": {
-        "type": "number",
-        "description": "重试间隔时间",
-        "default": 3
     }
 }
 
 schema_properties.update(**base_schema_properties)
 
 
+class NotSwarmEndpointError(Exception):
+    """节点不是swarm节点"""
+    pass
+
+
 class ComposeInfo(NamedTuple):
     stack_name: str
     path: str
+
+
+@dataclass
+class GitStackInfo:
+    endpoint_id: int
+    stack_name: str
+    stack_id: Optional[int] = None
+    swarm_id: Optional[str] = None
+    composeFilePathInRepository: Optional[str] = None
+    repositoryReferenceName: Optional[str] = None
+    repositoryURL: Optional[str] = None
+    env: Optional[List[Dict[str, str]]] = None
+
+    def check_git_repository(self) -> None:
+        if not (self.composeFilePathInRepository and self.repositoryReferenceName and self.repositoryURL):
+            raise AttributeError("need git repository info")
+
+    def update_to_portainer(self, rq: requests.Session, base_url: str, jwt: str, prune: bool = False,
+                            repositoryUsername: Optional[str] = None, repositoryPassword: Optional[str] = None) -> None:
+        """更新portainer中的stack
+
+        Args:
+            base_url (str): portainer的根地址
+            jwt (str): 访问jwt
+            prune (bool, optional): 更新是否删除不再使用的资源. Defaults to False.
+            repositoryUsername (Optional[str], optional): git仓库账户. Defaults to None.
+            repositoryPassword (Optional[str], optional): git仓库密码. Defaults to None.
+
+        Raises:
+            HttpCodeError: update stack query get error
+            e: update stack query get json result error
+        """
+        body: Dict[str, Any] = {
+            "env": self.env,
+            "prune": prune,
+            "repositoryReferenceName": self.repositoryReferenceName,
+        }
+        if repositoryUsername and repositoryPassword:
+            repositoryAuthentication = True
+            body.update({
+                "repositoryAuthentication": repositoryAuthentication,
+                "repositoryPassword": repositoryPassword,
+                "repositoryUsername": repositoryUsername
+            })
+        else:
+            repositoryAuthentication = False
+            body.update({
+                "repositoryAuthentication": repositoryAuthentication
+            })
+        res = rq.put(
+            f"{base_url}/api/stacks/{self.stack_id}/git",
+            headers=requests.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}),
+            params={
+                "endpointId": self.endpoint_id
+            },
+            json=body)
+        if res.status_code != 200:
+            log.error("update stack query get error",
+                      base_url=base_url,
+                      status_code=res.status_code,
+                      stack=self)
+            raise HttpCodeError("update stack query get error")
+        try:
+            res_json = res.json()
+        except Exception as e:
+            log.error("update stack query get json result error", stack=self, err=type(e), err_msg=str(e), exc_info=True, stack_info=True)
+            raise e
+        else:
+            log.info("update stack ok", stack=self, result=res_json)
+
+    def create_to_portainer(self, rq: requests.Session, base_url: str, jwt: str,
+                            repositoryUsername: Optional[str] = None, repositoryPassword: Optional[str] = None) -> None:
+        """使用对象的信息创建stack.
+
+        Args:
+            base_url (str):  portainer的根地址
+            jwt (str): 访问jwt
+            repositoryUsername (Optional[str], optional): git仓库账户. Defaults to None.
+            repositoryPassword (Optional[str], optional): git仓库密码. Defaults to None.
+
+        Raises:
+            AttributeError: only create git repository method
+            HttpCodeError: create stack query get error
+            e: create stack query get json result error
+        """
+        body: Dict[str, Any] = {
+            "env": self.env,
+            "composeFilePathInRepository": self.composeFilePathInRepository,
+            "name": self.stack_name,
+            "repositoryReferenceName": self.repositoryReferenceName,
+            "repositoryURL": self.repositoryURL,
+        }
+        if repositoryUsername and repositoryPassword:
+            repositoryAuthentication = True
+            body.update({
+                "repositoryAuthentication": repositoryAuthentication,
+                "repositoryPassword": repositoryPassword,
+                "repositoryUsername": repositoryUsername
+            })
+        else:
+            repositoryAuthentication = False
+            body.update({
+                "repositoryAuthentication": repositoryAuthentication
+            })
+        if self.swarm_id:
+            stack_type = 1
+            body.update({"swarmID": self.swarm_id})
+        else:
+            stack_type = 2
+        params = (("method", "repository"), ("type", stack_type), ("endpointId", self.endpoint_id))
+        res = rq.post(
+            f"{base_url}/api/stacks",
+            headers=requests.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}),
+            params=params,
+            json=body)
+        if res.status_code != 200:
+            log.error("create stack query get error",
+                      base_url=base_url,
+                      status_code=res.status_code,
+                      stack=self)
+            raise HttpCodeError("create stack query get error")
+        try:
+            res_json = res.json()
+        except Exception as e:
+            log.error("create stack query get json result error", stack=self, err=type(e), err_msg=str(e), exc_info=True, stack_info=True)
+            raise e
+        else:
+            log.info("create stack ok", stack=self, result=res_json)
+
+    def update_or_create(self, rq: requests.Session, base_url: str, jwt: str, prune: bool = False,
+                         repositoryUsername: Optional[str] = None, repositoryPassword: Optional[str] = None) -> None:
+        self.check_git_repository()
+        if self.stack_id:
+            self.update_to_portainer(rq=rq, base_url=base_url, jwt=jwt, prune=prune, repositoryUsername=repositoryUsername, repositoryPassword=repositoryPassword)
+        else:
+            self.create_to_portainer(rq=rq, base_url=base_url, jwt=jwt, repositoryUsername=repositoryUsername, repositoryPassword=repositoryPassword)
+        log.info("update_or_create query ok")
 
 
 class CreateOrUpdateStack(EntryPoint):
@@ -153,7 +286,10 @@ class CreateOrUpdateStack(EntryPoint):
         repository_username = self.config.get("repository_username")
         repository_password = self.config.get("repository_password")
         retry_max_times = self.config.get("retry_max_times")
-        retry_interval = self.config.get("retry_interval")
+        retry_interval_backoff_factor = self.config.get("retry_interval_backoff_factor")
+        rq = requests.Session()
+        if retry_max_times and int(retry_max_times) > 0:
+            rq.mount('https://', HTTPAdapter(max_retries=Retry(total=int(retry_max_times), backoff_factor=retry_interval_backoff_factor, method_whitelist=frozenset(['GET', 'POST', 'PUT']))))
         # 初始化log
         log.initialize_for_app(app_name="UpdateStack", log_level=log_level)
         log.info("get config", config=self.config)
@@ -165,16 +301,16 @@ class CreateOrUpdateStack(EntryPoint):
         endpoints_stacks = self.handdler_excepts(excepts)
         log.debug("deal with excepts ok", endpoints_stacks=endpoints_stacks)
         # 获取jwt
-        jwt = get_jwt(base_url=base_url, username=username, password=password)
+        jwt = get_jwt(rq, base_url=base_url, username=username, password=password)
         log.debug("deal with jwt ok", jwt=jwt)
         # 获取已经存在的stack信息
-        endpoint_stack_info = get_all_stacks_from_portainer(base_url=base_url, jwt=jwt)
+        endpoint_stack_info = get_all_stacks_from_portainer(rq, base_url=base_url, jwt=jwt)
         log.debug("deal with endpoint_stack_info ok", endpoint_stack_info=endpoint_stack_info)
         # 获取endpoint信息
         for endpoint in endpoints:
             swarmID: Optional[str] = None
             try:
-                swarmID = get_swarm_id(base_url=base_url, jwt=jwt, endpoint=endpoint)
+                swarmID = get_swarm_id(rq, base_url=base_url, jwt=jwt, endpoint=endpoint)
             except NotSwarmEndpointError:
                 log.info("Endpoint not swarm", endpoint=endpoint)
             except Exception as e:
@@ -188,9 +324,8 @@ class CreateOrUpdateStack(EntryPoint):
                 stack = exist_stacks.get(_stack.stack_name)
                 if stack:
                     if stack.repositoryURL == repository_url and stack.repositoryReferenceName == repository_reference_name and stack.composeFilePathInRepository == _stack.path and stack.swarm_id == swarmID:
-                        stack.update_or_create(base_url=base_url, jwt=jwt, prune=prune,
-                                               repositoryUsername=repository_username, repositoryPassword=repository_password,
-                                               retry_max_times=retry_max_times, retry_interval=retry_interval)
+                        stack.update_or_create(rq, base_url=base_url, jwt=jwt, prune=prune,
+                                               repositoryUsername=repository_username, repositoryPassword=repository_password)
                 else:
                     stack = GitStackInfo(
                         endpoint_id=endpoint,
@@ -199,7 +334,107 @@ class CreateOrUpdateStack(EntryPoint):
                         composeFilePathInRepository=_stack.path,
                         repositoryReferenceName=repository_reference_name,
                         repositoryURL=repository_url, env=[])
-                    stack.update_or_create(
-                        base_url=base_url, jwt=jwt, prune=prune,
-                        repositoryUsername=repository_username, repositoryPassword=repository_password,
-                        retry_max_times=retry_max_times, retry_interval=retry_interval)
+                    stack.update_or_create(rq, base_url=base_url, jwt=jwt, prune=prune,
+                                           repositoryUsername=repository_username, repositoryPassword=repository_password)
+
+
+def get_swarm_id(rq: requests.Session, base_url: str, jwt: str, endpoint: int) -> str:
+    """获取端点的SwarmID.
+
+    Args:
+        rq (requests.Session): 请求会话
+        base_url (str): portainer的根地址
+        jwt (str): 访问jwt
+        endpoint (int): 端点ID
+
+    Raises:
+        HttpCodeError: get swarm id query get error
+        e: get swarm id query get json result error
+        AssertionError: endpint not swarm
+
+    Returns:
+        str: Swarm ID
+    """
+    res = rq.get(f"{base_url}/api/endpoints/{endpoint}/docker/swarm",
+                 headers=requests.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}))
+    if res.status_code != 200:
+        log.error("get swarm id query get error",
+                  base_url=base_url,
+                  endpoint=endpoint,
+                  status_code=res.status_code)
+        raise HttpCodeError("get swarm id query get error")
+    try:
+        res_json = res.json()
+    except Exception as e:
+        log.error("get swarm id query get json result error", endpoint=endpoint, err=type(e), err_msg=str(e), exc_info=True, stack_info=True)
+        raise e
+    else:
+        swarm_id = res_json.get("ID")
+        if swarm_id:
+            return swarm_id
+        else:
+            raise NotSwarmEndpointError(f"endpint {endpoint} not swarm")
+
+
+def get_all_stacks_from_portainer(rq: requests.Session, base_url: str, jwt: str) -> Dict[int, Dict[str, GitStackInfo]]:
+    """
+
+    Args:
+        rq (requests.Session): 请求会话
+        base_url (str): portainer的根地址
+        jwt (str): 访问jwt
+
+    Raises:
+        HttpCodeError: get stack query get error
+        e: get stack query get json result error
+
+    Returns:
+        Dict[int, Dict[str, GitStackInfo]]: dict[endpointid,dict[stack_name,stackinfo]]
+    """
+    res = rq.get(f"{base_url}/api/stacks",
+                 headers=requests.structures.CaseInsensitiveDict({"Authorization": "Bearer " + jwt}))
+    if res.status_code != 200:
+        log.error("get swarm id query get error",
+                  base_url=base_url,
+                  status_code=res.status_code)
+        raise HttpCodeError("get stack query get error")
+    try:
+        res_jsons = res.json()
+    except Exception as e:
+        log.error("get stack query get json result error", err=type(e), err_msg=str(e), exc_info=True, stack_info=True)
+        raise e
+    else:
+        result: Dict[int, Dict[str, GitStackInfo]] = {}
+        for res_json in res_jsons:
+            gcf = res_json.get('GitConfig')
+            endpoint_id = res_json['EndpointId']
+            stack_id = res_json['Id']
+            stack_name = res_json["Name"]
+            if gcf:
+                gsi = GitStackInfo(
+                    endpoint_id=endpoint_id,
+                    env=res_json["Env"],
+                    stack_id=stack_id,
+                    stack_name=stack_name,
+                    swarm_id=res_json.get('SwarmId'),
+                    composeFilePathInRepository=gcf["ConfigFilePath"],
+                    repositoryReferenceName=gcf["ReferenceName"],
+                    repositoryURL=gcf["URL"]
+                )
+            else:
+                gsi = GitStackInfo(
+                    endpoint_id=endpoint_id,
+                    env=res_json["Env"],
+                    stack_id=stack_id,
+                    stack_name=res_json["Name"],
+                    swarm_id=res_json.get('SwarmId'),
+                    composeFilePathInRepository=None,
+                    repositoryReferenceName=None,
+                    repositoryURL=None
+                )
+            if not result.get(endpoint_id):
+                result[endpoint_id] = {stack_name: gsi}
+            else:
+                result[endpoint_id][stack_name] = gsi
+
+        return result
