@@ -47,7 +47,7 @@ class UpdateServiceByWebhooks(EntryPoint):
             rq.mount('https://', HTTPAdapter(max_retries=Retry(total=int(retry_max_times), backoff_factor=retry_interval_backoff_factor, method_whitelist=frozenset(['GET', 'POST', 'PUT']))))
         log.initialize_for_app(app_name="UpdateStack", log_level=log_level)
         for token in tokens:
-            res = rq.post(f"{base_url}/webhooks/{token}")
+            res = rq.post(f"{base_url}/api/webhooks/{token}")
             if res.status_code >= 300 or res.status_code <= 199:
                 log.error("update service query get error", status_code=res.status_code)
             else:

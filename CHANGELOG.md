@@ -5,6 +5,10 @@
 + 新增全局flag`not_verify`用于跳过https的验证
 + 子命令`updateservicebywebhook`的`tokens`参数现在是位置参数
 
+## bug修复
+
++ 修复`updateservicebywebhook`的调用url错误
+
 # 0.0.2
 
 ## 接口修改
