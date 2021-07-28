@@ -239,11 +239,7 @@ class UpdateServiceInStack(EntryPoint):
         deploy_path = self.config["deploy_path"]
         retry_max_times = self.config.get("retry_max_times")
         retry_interval_backoff_factor = self.config.get("retry_interval_backoff_factor")
-        not_verify = retry_interval_backoff_factor = self.config.get("not_verify")
-        if not_verify:
-            rq = requests.Session(verify=False)
-        else:
-            rq = requests.Session()
+        rq = requests.Session()
         if retry_max_times and int(retry_max_times) > 0:
             rq.mount('https://', HTTPAdapter(max_retries=Retry(total=int(retry_max_times), backoff_factor=retry_interval_backoff_factor, method_whitelist=frozenset(['GET', 'POST', 'PUT']))))
         log.initialize_for_app(app_name="UpdateStack", log_level=log_level)

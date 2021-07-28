@@ -22,12 +22,7 @@ base_schema_properties = {
         "type": "number",
         "description": "重试间隔时间,的参数,间隔时间位`{backoff factor} * (2 ** ({number of total retries} - 1))`",
         "default": 0.1
-    },
-    "not_verify": {
-        "type": "boolean",
-        "description": "是否不验证ssl",
-        "default": False
-    },
+    }
 }
 
 

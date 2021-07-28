@@ -2,7 +2,6 @@
 
 ## 接口修改
 
-+ 新增全局flag`not_verify`用于跳过https的验证
 + 子命令`updateservicebywebhook`的`tokens`参数现在是位置参数
 + 子命令`updateservicebywebhook`现在可以用执行目录下的`update_service_by_webhooks_config.json`文件作为配置
 + 子命令`createorupdatestack`的`endpoints`参数现在是位置参数
