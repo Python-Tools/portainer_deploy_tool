@@ -248,12 +248,14 @@ class CreateOrUpdateStack(EntryPoint):
     def find_compose(self, cwd: Path, suffix: str, root: Path) -> None:
         for p in cwd.iterdir():
             if p.is_file:
+                log.info("find file", file_name=p.name)
                 if p.name.endswith(suffix):
                     rp = p.relative_to(root)
                     stack_name = p.name.replace(suffix, "")
                     if stack_name in [i.stack_name for i in self.compose_infos]:
                         log.error("stack name repetition", stack_name=stack_name)
                         raise AttributeError("stack name repetition")
+                    log.debug("find stack", stack_name=stack_name)
                     ci = ComposeInfo(stack_name=stack_name, path=str(rp))
                     self.compose_infos.append(ci)
             elif p.is_dir():
@@ -300,7 +302,7 @@ class CreateOrUpdateStack(EntryPoint):
         self.find_compose(cwd=cwdp, suffix=suffix, root=root)
         # 处理excepts
         endpoints_stacks = self.handdler_excepts(excepts)
-        log.debug("deal with excepts ok", endpoints_stacks=endpoints_stacks)
+        log.debug("deal with excepts ok", endpoints_stacks=endpoints_stacks, compose_infos=self.compose_infos)
         # 获取jwt
         jwt = get_jwt(rq, base_url=base_url, username=username, password=password)
         log.debug("deal with jwt ok", jwt=jwt)
@@ -317,9 +319,7 @@ class CreateOrUpdateStack(EntryPoint):
             except Exception as e:
                 raise e
             log.debug("deal with swarmID ok", swarmID=swarmID, endpoint=endpoint)
-            exist_stacks = endpoint_stack_info.get(endpoint)
-            if exist_stacks is None:
-                continue
+            exist_stacks = endpoint_stack_info.get(endpoint, {})
             preparing_stacks = endpoints_stacks[endpoint]
             for _stack in preparing_stacks:
                 stack = exist_stacks.get(_stack.stack_name)
