@@ -1,3 +1,9 @@
+# 0.0.4
+
+## bug修复
+
++ 修复`createorupdatestack`在没有stack时无法部署的问题
+
 # 0.0.3
 
 ## 接口修改
