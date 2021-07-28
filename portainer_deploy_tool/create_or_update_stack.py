@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from dataclasses import dataclass
 from copy import deepcopy
@@ -75,6 +76,10 @@ schema_properties: Dict[str, Any] = {
         "type": "string",
         "description": "执行位置",
         "default": "."
+    },
+    "deploy_next_wait": {
+        "type": "number",
+        "description": "每次部署间隔的时长"
     }
 }
 
@@ -289,6 +294,7 @@ class CreateOrUpdateStack(EntryPoint):
         repository_username = self.config.get("repository_username")
         repository_password = self.config.get("repository_password")
         retry_max_times = self.config.get("retry_max_times")
+        deploy_next_wait = self.config.get("deploy_next_wait")
         retry_interval_backoff_factor = self.config.get("retry_interval_backoff_factor")
         rq = requests.Session()
         if retry_max_times and int(retry_max_times) > 0:
@@ -337,6 +343,8 @@ class CreateOrUpdateStack(EntryPoint):
                         repositoryURL=repository_url, env=[])
                     stack.update_or_create(rq, base_url=base_url, jwt=jwt, prune=prune,
                                            repositoryUsername=repository_username, repositoryPassword=repository_password)
+                if deploy_next_wait:
+                    time.sleep(deploy_next_wait)
 
 
 def get_swarm_id(rq: requests.Session, base_url: str, jwt: str, endpoint: int) -> str:

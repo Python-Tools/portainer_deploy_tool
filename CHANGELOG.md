@@ -1,3 +1,9 @@
+# 0.0.5
+
+## 接口修改
+
++ 子命令`createorupdatestack`新增参数`deploy_next_wait`用于每次部署时保持一个间隔
+
 # 0.0.4
 
 ## bug修复
